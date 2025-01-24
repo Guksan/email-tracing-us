@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Email Tracking Dashboard</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Email Tracking Dashboard</h1>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Celkem kontaktů</h3>
+                <p id="total-contacts">0</p>
+            </div>
+            <div class="stat-card">
+                <h3>Otevřené</h3>
+                <p id="opened-emails">0</p>
+            </div>
+            <div class="stat-card">
+                <h3>Prokliknuté</h3>
+                <p id="clicked-emails">0</p>
+            </div>
+        </div>
+
+        <div class="data-section">
+            <h2>Kontakty</h2>
+            <div class="filter-buttons">
+                <button onclick="loadContacts('all')">Všechny</button>
+                <button onclick="loadContacts('opened')">Otevřené</button>
+                <button onclick="loadContacts('clicked')">Prokliknuté</button>
+            </div>
+            <table id="contacts-table">
+                <thead>
+                    <tr>
+                        <th>Jméno</th>
+                        <th>Email</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="contacts-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        async function loadStats() {
+            const response = await fetch('/stats');
+            const stats = await response.json();
+            document.getElementById('total-contacts').textContent = stats.total;
+            document.getElementById('opened-emails').textContent = stats.opened;
+            document.getElementById('clicked-emails').textContent = stats.clicked;
+        }
+
+        async function loadContacts(type) {
+            const response = await fetch(`/contacts/filter?type=${type}`);
+            const contacts = await response.json();
+            const tbody = document.getElementById('contacts-body');
+            tbody.innerHTML = '';
+            
+            contacts.forEach(contact => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${contact.name || '-'}</td>
+                    <td>${contact.email}</td>
+                    <td class="status-${type}">${type}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Load initial data
+        loadStats();
+        loadContacts('all');
+    </script>
+</body>
+</html>
