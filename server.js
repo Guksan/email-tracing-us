@@ -11,15 +11,28 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
+// Upravené nastavení pro Render PostgreSQL
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production'
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+
+// Test připojení k databázi
+pool.query('SELECT NOW()', (err, res) => {
+  if (err) {
+    console.error('Chyba připojení k databázi:', err);
+  } else {
+    console.log('Databáze připojena úspěšně');
+  }
 });
 
 // Inicializace databáze
 async function initDB() {
   const client = await pool.connect();
   try {
+    console.log('Vytvářím tabulky...');
     await client.query(`
       CREATE TABLE IF NOT EXISTS contacts (
         id SERIAL PRIMARY KEY,
@@ -41,12 +54,16 @@ async function initDB() {
         clicked_at TIMESTAMP
       );
     `);
+    console.log('Tabulky vytvořeny');
+  } catch (error) {
+    console.error('Chyba při vytváření tabulek:', error);
   } finally {
     client.release();
   }
 }
 
-initDB();
+// Spustit inicializaci
+initDB().catch(console.error);
 
 // Tracking endpoints
 app.post('/track/register', async (req, res) => {
@@ -70,6 +87,7 @@ app.post('/track/register', async (req, res) => {
     res.status(201).json({ trackingId });
   } catch (error) {
     await client.query('ROLLBACK');
+    console.error('Chyba registrace:', error);
     res.status(500).json({ error: 'Chyba registrace' });
   } finally {
     client.release();
@@ -104,6 +122,12 @@ app.get('/track/:id/open.gif', async (req, res) => {
     res.end(gif);
   } catch (error) {
     await client.query('ROLLBACK');
+    console.error('Chyba při sledování otevření:', error);
+    const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+    res.writeHead(200, {
+      'Content-Type': 'image/gif',
+      'Content-Length': gif.length
+    });
     res.end(gif);
   } finally {
     client.release();
@@ -131,6 +155,7 @@ app.get('/track/:id/click', async (req, res) => {
     res.redirect(req.query.url);
   } catch (error) {
     await client.query('ROLLBACK');
+    console.error('Chyba při sledování kliknutí:', error);
     res.redirect(req.query.url || '/');
   } finally {
     client.release();
@@ -139,8 +164,9 @@ app.get('/track/:id/click', async (req, res) => {
 
 // Dashboard endpoints
 app.get('/stats', async (req, res) => {
+  const client = await pool.connect();
   try {
-    const result = await pool.query(`
+    const result = await client.query(`
       SELECT 
         COUNT(*) as total,
         COUNT(CASE WHEN opened THEN 1 END) as opened,
@@ -149,11 +175,15 @@ app.get('/stats', async (req, res) => {
     `);
     res.json(result.rows[0]);
   } catch (error) {
+    console.error('Chyba při získávání statistik:', error);
     res.status(500).json({ error: 'Chyba statistik' });
+  } finally {
+    client.release();
   }
 });
 
 app.get('/contacts/filter', async (req, res) => {
+  const client = await pool.connect();
   const { type } = req.query;
   try {
     let query = 'SELECT name, email FROM contacts WHERE 1=1';
@@ -161,10 +191,13 @@ app.get('/contacts/filter', async (req, res) => {
     if (type === 'opened') query += ' AND opened = true AND clicked = false';
     if (type === 'inactive') query += ' AND opened = false';
     
-    const result = await pool.query(query);
+    const result = await client.query(query);
     res.json(result.rows);
   } catch (error) {
+    console.error('Chyba při filtrování kontaktů:', error);
     res.status(500).json({ error: 'Chyba filtru' });
+  } finally {
+    client.release();
   }
 });
 
@@ -174,4 +207,8 @@ app.get('/', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server běží na portu ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server běží na portu ${PORT}`);
+  console.log('NODE_ENV:', process.env.NODE_ENV);
+  console.log('Database URL exists:', !!process.env.DATABASE_URL);
+});
